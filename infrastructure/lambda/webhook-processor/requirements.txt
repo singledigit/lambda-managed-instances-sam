@@ -1,0 +1,4 @@
+# No additional dependencies needed.
+# boto3 is included in the Lambda runtime.
+# aws-lambda-powertools is provided via Lambda Layer.
+# asyncio is part of the Python standard library.

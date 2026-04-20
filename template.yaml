@@ -1,0 +1,131 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Lambda Managed Instances - Webhook Processor Demo
+
+Parameters:
+  Subnet1:
+    Type: AWS::EC2::Subnet::Id
+    Description: First subnet ID (AZ 1)
+  Subnet2:
+    Type: AWS::EC2::Subnet::Id
+    Description: Second subnet ID (AZ 2)
+  Subnet3:
+    Type: AWS::EC2::Subnet::Id
+    Description: Third subnet ID (AZ 3)
+  SecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Security group ID for the capacity provider
+
+Globals:
+  Function:
+    Runtime: python3.13
+    Tracing: Active
+    Architectures:
+      - x86_64
+    Layers:
+      - !Sub arn:aws:lambda:${AWS::Region}:017000801446:layer:AWSLambdaPowertoolsPythonV3-python313-x86_64:18
+
+Resources:
+  # --- DynamoDB Table ---
+  WebhookEventsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}-events
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
+  # --- Capacity Provider for LMI ---
+  WebhookCapacityProvider:
+    Type: AWS::Serverless::CapacityProvider
+    Properties:
+      CapacityProviderName: !Sub ${AWS::StackName}-cp
+      VpcConfig:
+        SubnetIds:
+          - !Ref Subnet1
+          - !Ref Subnet2
+          - !Ref Subnet3
+        SecurityGroupIds:
+          - !Ref SecurityGroupId
+      ScalingConfig:
+        MaxVCpuCount: 30
+
+  # --- API Gateway ---
+  WebhookApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      TracingEnabled: true
+      AccessLogSetting:
+        DestinationArn: !GetAtt ApiLogGroup.Arn
+        Format: "$context.requestId $context.httpMethod $context.path $context.status $context.responseLatency"
+
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/apigateway/${AWS::StackName}
+      RetentionInDays: 7
+
+  # --- LMI Webhook Processor ---
+  WebhookProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: app.lambda_handler
+      CodeUri: infrastructure/lambda/webhook-processor/
+      Description: Webhook processor running on Lambda Managed Instances
+      MemorySize: 4096
+      Timeout: 30
+      CapacityProviderConfig:
+        Arn: !GetAtt WebhookCapacityProvider.Arn
+        ExecutionEnvironmentMemoryGiBPerVCpu: 2.0
+        PerExecutionEnvironmentMaxConcurrency: 16
+      AutoPublishAlias: live
+      Environment:
+        Variables:
+          POWERTOOLS_SERVICE_NAME: WebhookProcessor
+          POWERTOOLS_METRICS_NAMESPACE: LMIWebhookDemo
+          TABLE_NAME: !Ref WebhookEventsTable
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref WebhookEventsTable
+      Events:
+        PostWebhook:
+          Type: Api
+          Properties:
+            Path: /webhooks
+            Method: POST
+            RestApiId: !Ref WebhookApi
+        GetWebhook:
+          Type: Api
+          Properties:
+            Path: /webhooks/{event_id}
+            Method: GET
+            RestApiId: !Ref WebhookApi
+        HealthCheck:
+          Type: Api
+          Properties:
+            Path: /health
+            Method: GET
+            RestApiId: !Ref WebhookApi
+
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub https://${WebhookApi}.execute-api.${AWS::Region}.amazonaws.com/prod
+  WebhookProcessorFunction:
+    Description: Webhook Processor Function ARN
+    Value: !GetAtt WebhookProcessorFunction.Arn
+  CapacityProviderArn:
+    Description: Capacity Provider ARN
+    Value: !GetAtt WebhookCapacityProvider.Arn
+  WebhookEventsTable:
+    Description: DynamoDB Table Name
+    Value: !Ref WebhookEventsTable
