@@ -15,6 +15,23 @@ Read the companion blog post: [Lambda Managed Instances: A Working Demo and the 
 
 ## Architecture
 
+```mermaid
+graph TD
+    A[API Gateway] --> B
+
+    subgraph VPC
+        subgraph Capacity Provider - 3 AZs
+            subgraph Lambda - LMI
+                B[Handler] --> C[Geocoding]
+                B --> D[Fraud Scoring]
+                B --> E[Loyalty Lookup]
+            end
+        end
+    end
+
+    B --> F[(DynamoDB)]
+```
+
 API Gateway → Lambda (LMI) → 3 concurrent enrichment calls + DynamoDB write
 
 The Lambda function simulates a webhook processor that validates incoming events, calls three downstream services concurrently (geocoding, fraud scoring, loyalty lookup), and writes the enriched result to DynamoDB. Total processing time is ~200ms, with the CPU active for only ~10% of that — the rest is I/O wait. This is the pattern where LMI's multi-concurrency saves money.
