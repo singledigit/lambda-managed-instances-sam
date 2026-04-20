@@ -2,7 +2,7 @@
 
 A working demo of [AWS Lambda Managed Instances](https://docs.aws.amazon.com/lambda/latest/dg/lambda-managed-instances.html) (LMI) using AWS SAM. Deploys a webhook processing API that receives events, enriches them by calling downstream services concurrently, and stores results in DynamoDB.
 
-Read the companion blog post: [Lambda Managed Instances: A Working Demo and the Math Behind It](https://edjgeek.com/blog/lmi-webhook-processor)
+Read the companion blog post: [Lambda Managed Instances: A Working Demo and the Math Behind It](https://edjgeek.com/blog/lambda-managed-instances/)
 
 ## What This Demonstrates
 
